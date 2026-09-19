@@ -19,6 +19,8 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.media.audiofx.BassBoost
+import android.media.audiofx.Equalizer
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -76,6 +78,9 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
     private var pendingAnnounce = false
 
     private var player: MediaPlayer? = null
+    private var equalizer: Equalizer? = null
+    private var bassBoost: BassBoost? = null
+    
     private var nowPlaying = false
     private var hasFocus = false
 
@@ -178,7 +183,11 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
     }
 
     private val resolveClicks = Runnable {
-        val type = if (clickCount >= 2) ClickType.DOUBLE else ClickType.SINGLE
+        val type = when {
+            clickCount >= 3 -> ClickType.TRIPLE
+            clickCount == 2 -> ClickType.DOUBLE
+            else -> ClickType.SINGLE
+        }
         clickCount = 0
         perform(settings.actionFor(type))
     }
@@ -255,11 +264,11 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
             addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
             addAction("android.bluetooth.headset.action.STATE_CHANGED")
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(connectionReceiver, filter, RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(connectionReceiver, filter)
-        }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.RECEIVER_EXPORTED
+        } else 0
+        
+        ContextCompat.registerReceiver(this, connectionReceiver, filter, flags)
     }
 
     private fun seedConnectedDevices() {
@@ -270,7 +279,13 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
                 if (d.type == AudioDeviceInfo.TYPE_WIRED_HEADSET || d.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES) {
                     deviceConnected("wired", "Wired headphones", announce = false)
                     foundWired = true
-                    break
+                } else if (d.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || d.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+                    val name = if (Build.VERSION.SDK_INT >= 28 && !d.productName.isNullOrEmpty()) {
+                        d.productName.toString()
+                    } else {
+                        "Bluetooth device"
+                    }
+                    deviceConnected("bt:connected", name, announce = false)
                 }
             }
         }
@@ -341,6 +356,38 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
         }, 2000L)
     }
 
+    private fun setupAudioEffects(audioSessionId: Int) {
+        equalizer?.release()
+        bassBoost?.release()
+
+        try {
+            equalizer = Equalizer(0, audioSessionId).apply {
+                enabled = true
+            }
+            bassBoost = BassBoost(0, audioSessionId).apply {
+                enabled = true
+                setStrength(1000) 
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun getEqualizerPresets(): List<String> {
+        val presets = mutableListOf<String>()
+        equalizer?.let { eq ->
+            val numPresets = eq.numberOfPresets
+            for (i in 0 until numPresets) {
+                presets.add(eq.getPresetName(i.toShort()))
+            }
+        }
+        return presets
+    }
+
+    fun setEqualizerPreset(presetIndex: Short) {
+        equalizer?.usePreset(presetIndex)
+    }
+
     private fun playIndex(index: Int) {
         val queue = PlayerBus.state.value.queue
         if (index !in queue.indices) return
@@ -357,6 +404,9 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
                 setDataSource(applicationContext, song.uri)
                 setOnCompletionListener { skip(1) }
                 prepare()
+                
+                setupAudioEffects(audioSessionId)
+                
                 start()
             }
             nowPlaying = true
@@ -420,6 +470,11 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun releasePlayer() {
+        equalizer?.release()
+        equalizer = null
+        bassBoost?.release()
+        bassBoost = null
+
         player?.run {
             stop()
             release()
