@@ -20,7 +20,8 @@ data class Song(
     val uri: Uri,
 )
 
-enum class ClickType { SINGLE, DOUBLE }
+// เพิ่ม TRIPLE เข้าไปตรงนี้
+enum class ClickType { SINGLE, DOUBLE, TRIPLE }
 
 enum class HeadphoneAction(val label: String) {
     PLAY_PAUSE("Play / Pause"),
@@ -57,6 +58,7 @@ class Settings(context: Context) {
         val default = when (type) {
             ClickType.SINGLE -> HeadphoneAction.PLAY_PAUSE
             ClickType.DOUBLE -> HeadphoneAction.NEXT
+            ClickType.TRIPLE -> HeadphoneAction.PREVIOUS // กำหนดค่าเริ่มต้นสำหรับการคลิก 3 ครั้ง
         }
         val stored = prefs.getString(type.name, null) ?: return default
         return runCatching { HeadphoneAction.valueOf(stored) }.getOrDefault(default)
