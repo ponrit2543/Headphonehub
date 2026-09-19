@@ -1,10 +1,12 @@
 package com.example.headphonehub
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -48,15 +50,35 @@ fun HeadphoneHubApp() {
 
     var singleClickAction by remember { mutableStateOf(settings.actionFor(ClickType.SINGLE)) }
     var doubleClickAction by remember { mutableStateOf(settings.actionFor(ClickType.DOUBLE)) }
+    var tripleClickAction by remember { mutableStateOf(settings.actionFor(ClickType.TRIPLE)) }
     var voiceAlerts by remember { mutableStateOf(settings.voiceAlertEnabled) }
     var listenerOn by remember { mutableStateOf(settings.listenerEnabled) }
 
     var hasAudioPermission by remember { mutableStateOf(MediaScanner.hasPermission(context)) }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
+    // Launcher ขอสิทธิ์อ่านไฟล์เสียง MediaStore
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasAudioPermission = isGranted
+    }
+
+    // Launcher ขอสิทธิ์ระบบสำหรับ Bluetooth และ Notification
+    val systemPermissionsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ -> }
+
+    LaunchedEffect(Unit) {
+        val neededPermissions = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            neededPermissions.add(Manifest.permission.BLUETOOTH_CONNECT)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            neededPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (neededPermissions.isNotEmpty()) {
+            systemPermissionsLauncher.launch(neededPermissions.toTypedArray())
+        }
     }
 
     LaunchedEffect(hasAudioPermission) {
@@ -138,6 +160,17 @@ fun HeadphoneHubApp() {
             }
 
             item {
+                ActionDropdown(
+                    label = "Triple Click",
+                    selectedAction = tripleClickAction,
+                    onActionSelected = {
+                        tripleClickAction = it
+                        settings.setAction(ClickType.TRIPLE, it)
+                    }
+                )
+            }
+
+            item {
                 Text(
                     text = "Preferences",
                     style = MaterialTheme.typography.titleMedium,
@@ -206,7 +239,7 @@ fun HeadphoneHubApp() {
             if (!hasAudioPermission) {
                 item {
                     Button(
-                        onClick = { permissionLauncher.launch(MediaScanner.audioPermission) },
+                        onClick = { audioPermissionLauncher.launch(MediaScanner.audioPermission) },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Grant Storage/Audio Permission")
