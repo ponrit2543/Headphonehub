@@ -255,7 +255,11 @@ class HeadphoneService : Service(), TextToSpeech.OnInitListener {
             addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
             addAction("android.bluetooth.headset.action.STATE_CHANGED")
         }
-        registerReceiver(connectionReceiver, filter)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(connectionReceiver, filter, RECEIVER_EXPORTED)
+        } else {
+            registerReceiver(connectionReceiver, filter)
+        }
     }
 
     private fun seedConnectedDevices() {
